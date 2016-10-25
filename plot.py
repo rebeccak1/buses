@@ -25,14 +25,22 @@ def findTimeDiff(stoptimes, predtimes):
 
     #find last time at stop
     filteredstops = map(lambda g: max(g, key=lambda x: x[1]), [list(j) for i, j in itertools.groupby(stoptimes, lambda y: y[0])])
-    print filteredstops
+    #print filteredstops
 
     
     for trip, time, distance in filteredstops:
 	try:
-	    t_diff.append((datetime.datetime.utcfromtimestamp(p_times[trip])-datetime.datetime.utcfromtimestamp(time)).total_seconds()/60)
-	    print (datetime.datetime.utcfromtimestamp(p_times[trip])-datetime.\
-datetime.utcfromtimestamp(time)).total_seconds()/60
+	    now = datetime.datetime.now()
+	    predict = datetime.datetime.utcfromtimestamp(p_times[trip])
+	    actual = datetime.datetime.utcfromtimestamp(time)
+	    diff = datetime.datetime(now.year, now.month, now.day, actual.hour, actual.minute, actual.second) - datetime.datetime(now.year, now.month, now.day, predict.hour, predict.minute, predict.second) 
+	    diff = diff.total_seconds()/60
+	    if(diff < -1400):
+		continue
+	    t_diff.append(diff)
+	    print diff
+	
+	    #t_diff.append(((datetime.datetime.utcfromtimestamp(p_times[trip])-datetime.datetime.utcfromtimestamp(time)).total_seconds() % 86400)/60)
 	except:
 	    continue
 
@@ -41,7 +49,7 @@ datetime.utcfromtimestamp(time)).total_seconds()/60
 	
 if __name__ == '__main__':
 
-    conn = sqlite3.connect('test.db')
+    conn = sqlite3.connect('test2.db')
 
     c = conn.cursor()
 
@@ -58,8 +66,7 @@ if __name__ == '__main__':
 	    c.execute('SELECT trip, time, distance FROM data WHERE stop=? AND direction=?', (str(s[0]), str(d))) 
 	    s_times = c.fetchall()
 
-	    #c.execute('SELECT trip, arrival FROM predictions WHERE stop=? AND direction=?', (str(s[0]), str(d), ))
-	    c.execute('SELECT trip, arrival FROM predictions WHERE stop=?', (str(s[0]), ))
+	    c.execute('SELECT trip, arrival FROM predictions WHERE stop=? AND direction=?', (str(s[0]), str(d), ))
 	    p_times = c.fetchall()
 
 	    stoptimes[s[0]] = findTimeDiff(s_times, p_times)
