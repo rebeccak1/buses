@@ -49,74 +49,58 @@ def findTimeDiff(stoptimes, predtimes):
 	
 if __name__ == '__main__':
 
-    conn = sqlite3.connect('test2.db')
+    conn = sqlite3.connect('test3.db')
 
     c = conn.cursor()
 
+    #get all routes
+    c.execute('SELECT {col} FROM {tn}'.
+	      format(tn='data', col='route'))
+    all_routes = unique(c.fetchall())
+
+
+    all_times = {}
+    for route in all_routes:
+	print str(route[0])
+    
     #are stops different for each direction?????
-    c.execute('SELECT {col} FROM {tn} WHERE {cn}=1'.
-	      format(tn='data', col='stop', cn='direction'))
-    allstops = unique(c.fetchall())
-    print allstops
+	c.execute('SELECT {col} FROM {tn} WHERE {cn}=1 AND route=?'.
+		  format(tn='data', col='stop', cn='direction'),(str(route[0]),))
+	allstops = unique(c.fetchall())
+	print allstops
 
-    stoptimes = {}
+	stoptimes = {}
 
-    for s in allstops:
-	for d in [1]:#for d in [0,1]:
-	    c.execute('SELECT trip, time, distance FROM data WHERE stop=? AND direction=?', (str(s[0]), str(d))) 
-	    s_times = c.fetchall()
+	for s in allstops:
+	    for d in [1]:#for d in [0,1]:
+		c.execute('SELECT trip, time, distance FROM data WHERE stop=? AND direction=? AND route=?', (str(s[0]), str(d), str(route[0]), )) 
+		s_times = c.fetchall()
 
-	    c.execute('SELECT trip, arrival FROM predictions WHERE stop=? AND direction=?', (str(s[0]), str(d), ))
-	    p_times = c.fetchall()
+		c.execute('SELECT trip, arrival FROM predictions WHERE stop=? AND direction=? AND route=?', (str(s[0]), str(d), str(route[0]), ))
+		p_times = c.fetchall()
 
-	    stoptimes[s[0]] = findTimeDiff(s_times, p_times)
+		stoptimes[s[0]] = findTimeDiff(s_times, p_times)
 
 
-    stoptimes = list(itertools.chain(*stoptimes.values()))
+	stoptimes = list(itertools.chain(*stoptimes.values()))
+	all_times[route] = stoptimes
     
     conn.close()
 
-    stream_ids = tls.get_credentials_file()['stream_ids']
+    traces = []
+    print len(all_times)
+    for key, value in all_times.items():
+	traces.append(go.Histogram(
+	             x = value,
+		     name = str(key[0])
+		     ))
 
-    # (!) Get stream id from stream id list, 
-    #     only one needed for this plot
-    stream_id = stream_ids[0]
+    data = traces
 
-# Make a stream id object linking stream id to 'token' key
-    stream = Stream(token=stream_id)
+    layout = go.Layout(
+	legend=dict(orientation="v")
+	)
+    fig = go.Figure(data=data, layout=layout)
 
-# no need to set `'maxpoints'` for this plot
+    unique_url = py.plot(fig, filename='all-routes-timediff')
 
-
-    trace = go.Histogram(
-	x = stoptimes,
-	stream=stream
-    )
-
-    data = go.Data([trace])
-
-    fig = Figure(data=data)
-
-    unique_url = py.plot(fig, filename='71-timediff')
-
-    s = py.Stream(stream_id)
-    s.open()
-
-    time.sleep(5)
-    '''
-    the prior values. If it comes every 20 min, overthe course of an hour, 
-    we will see 3 buses.
-    '''
-    shape = 3 #number of observations 
-    rate = 60 #sum of observations
-
-    for stimes in stoptimes:
-
-	shape += 1
-	rate += stimes
-
-	s_data['y'] = Gamma(shape, scale = 1.0/rate)
-	s.write(s_data)
-	time.sleep(5)
-
-    s.close()
