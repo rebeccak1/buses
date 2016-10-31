@@ -4,12 +4,14 @@ import time, datetime
 import multiprocessing
 import math
 import sqlite3
+from geopy.distance import great_circle
 
 stopsbyroute = {}
 
 parameters = {"api_key": 'wX9NwuHnZU2ToO7GmGR9uw', #public api key
 	      "format": 'json'}
 
+#called once a day
 def get_routes():
     all_routes = []
     
@@ -38,7 +40,7 @@ def get_predictions_info(stopids, route, c):
             parametersPred['direction'] = d
             response = requests.get("http://realtime.mbta.com/developer/api/v2/schedulebystop", params=parametersPred)
             data = response.json()
-	    print data
+	    #print data
 	    try:
 		trips = data['mode'][0]['route'][0]['direction'][0]['trip']
 	    except:
@@ -72,50 +74,47 @@ def get_stops_info(data, route):
 	    stopids.append(s['stop_id'])
     return stopids
 
-def get_distance(lat1, lon1, lat2, lon2):
-    lat1 = math.radians(float(lat1))
-    lon1 = math.radians(float(lon1))
-    lat2 = math.radians(float(lat2))
-    lon2 = math.radians(float(lon2))
-    R = 6371*10*3 #radius in m
-    x = (lon2 - lon1) * math.cos(0.5*(lat2+lat1))
-    y = lat2 - lat1
-    d = R*math.sqrt(x*x + y*y)
-
-    return d
-    
 def stopped(current, c, conn):
 
-    for routes in current['mode'][0]['route']:
-	pos1 = []
-	pos2 = []
-	tstamp = []
-	
-	route = str(routes['route_id'])
-	for d in routes['direction']:
+    try:
+	for routes in current['mode'][0]['route']:
+	    route = str(routes['route_id'])
+	    for d in routes['direction']:
+		print "new d"
+		print d
 
-	    dirid = int(d['direction_id'])
-	    for t in d['trip']:
-		pos1.append(t['vehicle']['vehicle_lat'])
-		pos2.append(t['vehicle']['vehicle_lon'])
-		tstamp.append(t['vehicle']['vehicle_timestamp'])
-		tripid = t['trip_id']
+		pos1 = []
+		pos2 = []
+		tstamp = []
+		dirid = int(d['direction_id'])
+		for t in d['trip']:
+		    print "new t"
+		    print t
 
-	    for i in range(len(stopsbyroute[route][dirid])):
-		distance = get_distance(pos1[0], pos2[0], stopsbyroute[route][dirid][i][0], stopsbyroute[route][dirid][i][1])
-		if (distance < 5):
-		    print "inserting into table"
-		    c.execute("INSERT INTO data VALUES (?, ?, ?, ?, ?, ?, ?)", (route, dirid, stopsbyroute[route][dirid][i][3], stopsbyroute[route][dirid][i][2], tstamp[0], tripid, distance))
-		    conn.commit()
-		    break
+		    pos1 = t['vehicle']['vehicle_lat']
+		    pos2 = t['vehicle']['vehicle_lon']
+		    tstamp = t['vehicle']['vehicle_timestamp']
+		    tripid = t['trip_id']
 
+		    for i in range(len(stopsbyroute[route][dirid])):
+		    #stopsbyroute[route][dirid][i][0] the lat of this stop&dir
+			distance = great_circle((pos1, pos2), (stopsbyroute[route][dirid][i][0], stopsbyroute[route][dirid][i][1])).meters
+			if (distance < 5):
+			    c.execute("INSERT INTO data VALUES (?, ?, ?, ?, ?, ?, ?)", (route, dirid, stopsbyroute[route][dirid][i][0], stopsbyroute[route][dirid][i][1], tstamp, tripid, distance))
+			    print "warning {} {} {} {}".format(pos1, pos2, stopsbyroute[route][dirid][i][0], stopsbyroute[route][dirid][i][1])
+			    conn.commit()
+			    #break
+			    
+
+    except:
+	print current
     return 
 
 def main():
     
-    conn = sqlite3.connect('all_route_data.db')
+    conn = sqlite3.connect('TEST.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE data                                                
+    c.execute('''CREATE TABLE data           
                  (route text, direction real, stop real, stop_order real, time real, trip real,                 distance real)''')    
 
 
@@ -132,10 +131,11 @@ def main():
 	'''
         t = datetime.datetime.today()
         future = datetime.datetime(t.year, t.month, t.day, 7, 0)
-        if t.hour >= 5:
+        if t.hour >= 3:
             future += datetime.timedelta(days=1)
         time.sleep((future-t).total_seconds())
 	'''
+
 
         #do 5AM stuff                                                           
 	jobs = []
@@ -143,13 +143,14 @@ def main():
 	queue = multiprocessing.Queue()
 
 	all_routes = get_routes()
+	all_routes = ['77']
 
 	set_predictions_table(all_routes, c, conn)
 	print stopsbyroute.keys()
 
 	parameters["routes"] = '\'' + ','.join(all_routes) + '\''
 	del parameters["route"]
-	#parameters["routes"] = '1, 77'
+	parameters["routes"] = '77'
 
 	for t in range(2280):
 	    try:
