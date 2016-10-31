@@ -11,6 +11,12 @@ stopsbyroute = {}
 parameters = {"api_key": 'wX9NwuHnZU2ToO7GmGR9uw', #public api key
 	      "format": 'json'}
 
+def get_schedule_day(day):
+    if day in ['Mon','Tue','Wed','Thu','Fri']:
+	return 'Mon'
+    else:
+	return day
+
 #called once a day
 def get_routes():
     all_routes = []
@@ -27,6 +33,8 @@ def get_routes():
     return all_routes
 
 def get_predictions_info(stopids, route, c):
+    day = datetime.datetime.today().strftime("%a")
+
     print route
     parametersPred = {"route": route,
 		      "max_time": 1440,
@@ -46,8 +54,8 @@ def get_predictions_info(stopids, route, c):
 	    except:
 		continue
 	    for t in trips:
-		c.execute("INSERT INTO predictions VALUES (?, ?, ?, ?, ?, ?)",
-			  (route, s, t['trip_id'], t['sch_arr_dt'],t['sch_dep_dt'],d))
+		c.execute("INSERT INTO predictions VALUES (?, ?, ?, ?, ?, ?, ?)",
+			  (route, day, s, t['trip_id'], t['sch_arr_dt'],t['sch_dep_dt'],d))
     return
 
 def set_predictions_table(all_routes, c, conn):
@@ -60,7 +68,7 @@ def set_predictions_table(all_routes, c, conn):
 	stopids = get_stops_info(data, route)
 	get_predictions_info(stopids, route, c)
 	conn.commit()
-	time.sleep(30)
+	time.sleep(10)
     return
 
 
@@ -99,7 +107,8 @@ def stopped(current, c, conn):
 		    for i in range(len(stopsbyroute[route][dirid])):
 		    #stopsbyroute[route][dirid][i][0] the lat of this stop&dir
 			distance = great_circle((pos1, pos2), (stopsbyroute[route][dirid][i][0], stopsbyroute[route][dirid][i][1])).meters
-			if (distance < 5):
+			print distance
+			if (distance < 6):
 			    c.execute("INSERT INTO data VALUES (?, ?, ?, ?, ?, ?, ?)", (route, dirid, stopsbyroute[route][dirid][i][0], stopsbyroute[route][dirid][i][1], tstamp, tripid, distance))
 			    print "warning {} {} {} {}".format(pos1, pos2, stopsbyroute[route][dirid][i][0], stopsbyroute[route][dirid][i][1])
 			    conn.commit()
@@ -117,10 +126,8 @@ def main():
     c.execute('''CREATE TABLE data           
                  (route text, direction real, stop real, stop_order real, time real, trip real,                 distance real)''')    
 
-
-    #INSERT DAY INTO PREDICTIONS?
     c.execute('''CREATE TABLE predictions
-                 (route text, stop real, trip real, arrival real, departure real, direction real)''')
+                 (route text, day text, stop real, trip real, arrival real, departure real, direction real)''')
 
 
 
@@ -143,14 +150,20 @@ def main():
 	queue = multiprocessing.Queue()
 
 	all_routes = get_routes()
-	all_routes = ['77']
+	#all_routes = ['72']
 
-	set_predictions_table(all_routes, c, conn)
-	print stopsbyroute.keys()
+	t = datetime.datetime.today()
+	day = t.strftime("%a")
+
+	
+	if day in ['Mon', 'Sat', 'Sun']:
+	    #stops by route will be reset on the day the schedule changes, so don't need to save date info
+	    set_predictions_table(all_routes, c, conn)
+	    print stopsbyroute.keys()
 
 	parameters["routes"] = '\'' + ','.join(all_routes) + '\''
 	del parameters["route"]
-	parameters["routes"] = '77'
+	#parameters["routes"] = '72'
 
 	for t in range(2280):
 	    try:
